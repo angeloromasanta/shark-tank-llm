@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, addDoc, getDocs, query, orderBy, limit, doc, getDoc, setDoc } from 'firebase/firestore';
 import ReactMarkdown from 'react-markdown';
-
 // Firebase configuration
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -17,8 +16,6 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
-
-// Replace your OpenRouter API key
 const OPENROUTER_API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY;
 // First, add imports for LLM avatars at the top of your file
 
