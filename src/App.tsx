@@ -20,15 +20,58 @@ const db = getFirestore(app);
 
 // Replace your OpenRouter API key
 const OPENROUTER_API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY;
+// First, add imports for LLM avatars at the top of your file
 
-// List of available LLMs
+
 const availableLLMs = [
-  { id: 'gemini', name: 'Gemini', avatarBg: 'bg-teal-100', avatarText: 'G', apiId: 'google/gemini-flash-1.5' },
-  { id: 'claude', name: 'Claude', avatarBg: 'bg-purple-100', avatarText: 'C', apiId: 'anthropic/claude-3-haiku' },
-  { id: 'llama', name: 'Llama', avatarBg: 'bg-amber-100', avatarText: 'L', apiId: 'meta-llama/llama-3-70b-instruct' },
-  { id: 'gpt4', name: 'GPT-4', avatarBg: 'bg-green-100', avatarText: 'G4', apiId: 'openai/gpt-4o-mini' },
-  { id: 'mistral', name: 'Mistral', avatarBg: 'bg-blue-100', avatarText: 'M', apiId: 'mistralai/mistral-nemo' },
-  { id: 'qwen', name: 'Qwen', avatarBg: 'bg-red-100', avatarText: 'Gr', apiId: 'qwen/qwen-2.5-coder-32b-instruct' }
+  { 
+    id: 'gemini', 
+    name: 'Gemini', 
+    avatarBg: 'bg-teal-100', 
+    avatarText: 'G', 
+    apiId: 'google/gemini-flash-1.5',
+    avatarSrc: 'https://unpkg.com/@lobehub/icons-static-svg@latest/icons/gemini-color.svg'
+  },
+  { 
+    id: 'claude', 
+    name: 'Claude', 
+    avatarBg: 'bg-purple-100', 
+    avatarText: 'C', 
+    apiId: 'anthropic/claude-3-haiku',
+    avatarSrc: 'https://unpkg.com/@lobehub/icons-static-svg@latest/icons/claude-color.svg'
+  },
+  { 
+    id: 'llama', 
+    name: 'Llama', 
+    avatarBg: 'bg-amber-100', 
+    avatarText: 'L', 
+    apiId: 'meta-llama/llama-3-70b-instruct',
+    avatarSrc: 'https://unpkg.com/@lobehub/icons-static-svg@latest/icons/ollama.svg'
+  },
+  { 
+    id: 'gpt4', 
+    name: 'GPT-4', 
+    avatarBg: 'bg-green-100', 
+    avatarText: 'G4', 
+    apiId: 'openai/gpt-4o-mini',
+    avatarSrc: 'https://unpkg.com/@lobehub/icons-static-svg@latest/icons/openai.svg'
+  },
+  { 
+    id: 'mistral', 
+    name: 'Mistral', 
+    avatarBg: 'bg-blue-100', 
+    avatarText: 'M', 
+    apiId: 'mistralai/mistral-nemo',
+    avatarSrc: 'https://unpkg.com/@lobehub/icons-static-svg@latest/icons/mistral-color.svg'
+  },
+  { 
+    id: 'qwen', 
+    name: 'Qwen', 
+    avatarBg: 'bg-red-100', 
+    avatarText: 'Gr', 
+    apiId: 'qwen/qwen-2.5-coder-32b-instruct',
+    avatarSrc: 'https://unpkg.com/@lobehub/icons-static-svg@latest/icons/qwen-color.svg'
+  }
 ];
 
 const stances = ['pro', 'neutral', 'against'];
@@ -52,6 +95,7 @@ const stanceColors = {
     accent: 'bg-rose-100'
   }
 };
+
 
 function App() {
   // Setup state
@@ -122,6 +166,41 @@ function App() {
     
     loadLeaderboard();
   }, []);
+
+  
+// Helper function to get the base model ID from an instance ID
+const getBaseModelId = (instanceId) => {
+  // E.g., from "claude-pro-1" to "claude"
+  return instanceId.split('-')[0];
+};
+
+// Function to render LLM avatar
+const getLLMAvatar = (llmId, size = 36) => {
+  const baseModelId = getBaseModelId(llmId);
+  const model = availableLLMs.find(model => model.id === baseModelId);
+  
+  if (model && model.avatarSrc) {
+    return (
+      <img 
+        src={model.avatarSrc} 
+        alt={model.name} 
+        className="rounded-full object-cover" 
+        style={{ width: size, height: size }}
+      />
+    );
+  }
+  
+  // Fallback to text avatar if no icon is available
+  const stance = llmId.includes('-pro-') ? 'pro' : llmId.includes('-against-') ? 'against' : 'neutral';
+  const stanceColor = stanceColors[stance].accent;
+  
+  return (
+    <span className={`inline-flex items-center justify-center rounded-full ${stanceColor} text-sm font-medium`} style={{ width: size, height: size }}>
+      {model?.avatarText || llmId.charAt(0).toUpperCase()}
+    </span>
+  );
+};
+
 
   // Call OpenRouter API with streaming
   const callOpenRouterWithStreaming = async (prompt, modelId, onChunk) => {
@@ -906,11 +985,21 @@ const updateLeaderboard = async (winners) => {
             {selectedLLMs.map((llm) => (
               <div key={llm.id} className="border border-gray-200 rounded-lg p-6 shadow-sm hover:shadow-md transition-shadow">
                 <div className="flex items-center mb-4">
-                  <span className={`inline-flex items-center justify-center h-10 w-10 rounded-full ${llm.avatarBg} text-md font-medium mr-3`}>
-                    {llm.avatarText}
-                  </span>
-                  <span className="font-semibold text-lg">{llm.name}</span>
-                </div>
+  <div className="mr-3">
+    {llm.avatarSrc ? (
+      <img 
+        src={llm.avatarSrc} 
+        alt={llm.name} 
+        className="rounded-full h-10 w-10 object-cover"
+      />
+    ) : (
+      <span className={`inline-flex items-center justify-center h-10 w-10 rounded-full ${llm.avatarBg} text-md font-medium`}>
+        {llm.avatarText}
+      </span>
+    )}
+  </div>
+  <span className="font-semibold text-lg">{llm.name}</span>
+</div>
                 
                 <div className="space-y-4">
                   {stances.map((stance) => (
@@ -1104,9 +1193,9 @@ const updateLeaderboard = async (winners) => {
                   return (
                     <div key={idx} className="p-4 bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow">
                       <div className="flex items-center mb-3">
-  <span className={`inline-flex items-center justify-center h-9 w-9 rounded-full ${stanceColors.pro.accent} text-sm font-medium mr-3`}>
-    {comment.avatarText || comment.llmName?.charAt(0) || '?'}
-  </span>
+                      <div className="mr-3">
+  {getLLMAvatar(comment.llmId)}
+</div>
   <div>
     <span className="font-semibold text-gray-800">
       {comment.playerName || `Player ${comment.playerNumber || '?'}`}
@@ -1140,9 +1229,9 @@ const updateLeaderboard = async (winners) => {
                   return (
                     <div key={idx} className="p-4 bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow">
                       <div className="flex items-center mb-3">
-  <span className={`inline-flex items-center justify-center h-9 w-9 rounded-full ${stanceColors.neutral.accent} text-sm font-medium mr-3`}>
-    {comment.avatarText || comment.llmName?.charAt(0) || '?'}
-  </span>
+                      <div className="mr-3">
+  {getLLMAvatar(comment.llmId)}
+</div>
   <div>
     <span className="font-semibold text-gray-800">
       {comment.playerName || `Player ${comment.playerNumber || '?'}`}
@@ -1177,9 +1266,9 @@ const updateLeaderboard = async (winners) => {
                   return (
                     <div key={idx} className="p-4 bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow">
                       <div className="flex items-center mb-3">
-  <span className={`inline-flex items-center justify-center h-9 w-9 rounded-full ${stanceColors.against.accent} text-sm font-medium mr-3`}>
-    {comment.avatarText || comment.llmName?.charAt(0) || '?'}
-  </span>
+                      <div className="mr-3">
+  {getLLMAvatar(comment.llmId)}
+</div>
   <div>
     <span className="font-semibold text-gray-800">
       {comment.playerName || `Player ${comment.playerNumber || '?'}`}
