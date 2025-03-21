@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, addDoc, getDocs, query, orderBy, limit, doc, getDoc, setDoc, where, updateDoc } from 'firebase/firestore';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, Link } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 // Firebase configuration
 const firebaseConfig = {
@@ -110,7 +110,7 @@ const stanceColors = {
 };
 
 
-function App() {
+function App({ showLeaderboard: initialShowLeaderboard = false }) {
   // Setup state
   const [setupComplete, setSetupComplete] = useState(false);
   const [productName, setProductName] = useState('');
@@ -154,7 +154,7 @@ function App() {
 
   // Player map (maps real LLM IDs to player names)
   const [playerMap, setPlayerMap] = useState({});
-  const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [showLeaderboard, setShowLeaderboard] = useState(initialShowLeaderboard);
   const navigate = useNavigate();
   const { gameId: urlGameId } = useParams();
 
@@ -1362,65 +1362,112 @@ const handleGameClick = (gameId) => {
   }
 };
   // Render a single round of discussions
-  const renderRoundDiscussions = (round) => {
-    const roundData = discussions.find(d => d.round === round);
+// Render a single round of discussions
+// Render a single round of discussions
+const renderRoundDiscussions = (round) => {
+  const roundData = discussions.find(d => d.round === round);
 
-    if (!roundData) return null;
+  if (!roundData) return null;
 
-    // Group comments by stance
-    const proComments = roundData.comments.filter(c => c.stance === 'pro');
-    const neutralComments = roundData.comments.filter(c => c.stance === 'neutral');
-    const againstComments = roundData.comments.filter(c => c.stance === 'against');
+  // Group comments by stance
+  const proComments = roundData.comments.filter(c => c.stance === 'pro');
+  const neutralComments = roundData.comments.filter(c => c.stance === 'neutral');
+  const againstComments = roundData.comments.filter(c => c.stance === 'against');
 
-    // Check if any LLM is still streaming
-    const isAnyStreaming = Object.values(streamingStatus).some(status => status.isStreaming);
+  // Check if any LLM is still streaming
+  const isAnyStreaming = Object.values(streamingStatus).some(status => status.isStreaming);
 
-    return (
-      <div className="bg-white rounded-lg shadow-xl p-6 mb-8 border border-gray-200">
-        <div className="flex justify-between items-center mb-6">
-          <h3 className="text-xl font-bold text-gray-800">Round {round} Discussion</h3>
+  // Calculate which stances are active and how many
+  const activeStances = [];
+  if (proComments.length > 0) activeStances.push('pro');
+  if (neutralComments.length > 0) activeStances.push('neutral');
+  if (againstComments.length > 0) activeStances.push('against');
+  
+  const stanceCount = activeStances.length;
 
-          {currentStep === 'discussion' && currentRound === round && !isAnyStreaming && (
-            <button
-              onClick={proceedToVoting}
-              className="py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-md hover:shadow-lg"
-            >
-              Proceed to Voting
-            </button>
+  return (
+    <div className="bg-white rounded-lg shadow-xl p-6 mb-8 border border-gray-200">
+      <div className="flex justify-between items-center mb-6">
+        <h3 className="text-xl font-bold text-gray-800">Round {round} Discussion</h3>
+
+        {currentStep === 'discussion' && currentRound === round && !isAnyStreaming && (
+          <button
+            onClick={proceedToVoting}
+            className="py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-md hover:shadow-lg"
+          >
+            Proceed to Voting
+          </button>
+        )}
+      </div>
+
+      {stanceCount === 2 ? (
+        // Grid with 2 columns for exactly 2 stances
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {activeStances.includes('pro') && (
+            <div className={`border-2 ${stanceColors.pro.border} rounded-lg p-6 ${stanceColors.pro.bg}`}>
+              <h4 className={`text-lg font-semibold mb-4 ${stanceColors.pro.text}`}>Pro</h4>
+              <div className="space-y-6">
+                {proComments.map((comment, idx) => renderComment(comment, idx))}
+              </div>
+            </div>
+          )}
+
+          {activeStances.includes('neutral') && (
+            <div className={`border-2 ${stanceColors.neutral.border} rounded-lg p-6 ${stanceColors.neutral.bg}`}>
+              <h4 className={`text-lg font-semibold mb-4 ${stanceColors.neutral.text}`}>Neutral</h4>
+              <div className="space-y-6">
+                {neutralComments.map((comment, idx) => renderComment(comment, idx))}
+              </div>
+            </div>
+          )}
+
+          {activeStances.includes('against') && (
+            <div className={`border-2 ${stanceColors.against.border} rounded-lg p-6 ${stanceColors.against.bg}`}>
+              <h4 className={`text-lg font-semibold mb-4 ${stanceColors.against.text}`}>Against</h4>
+              <div className="space-y-6">
+                {againstComments.map((comment, idx) => renderComment(comment, idx))}
+              </div>
+            </div>
           )}
         </div>
+      ) : stanceCount === 1 ? (
+        // Single column for only 1 stance
+        <div className="grid grid-cols-1 gap-6">
+          {activeStances.includes('pro') && (
+            <div className={`border-2 ${stanceColors.pro.border} rounded-lg p-6 ${stanceColors.pro.bg}`}>
+              <h4 className={`text-lg font-semibold mb-4 ${stanceColors.pro.text}`}>Pro</h4>
+              <div className="space-y-6">
+                {proComments.map((comment, idx) => renderComment(comment, idx))}
+              </div>
+            </div>
+          )}
 
+          {activeStances.includes('neutral') && (
+            <div className={`border-2 ${stanceColors.neutral.border} rounded-lg p-6 ${stanceColors.neutral.bg}`}>
+              <h4 className={`text-lg font-semibold mb-4 ${stanceColors.neutral.text}`}>Neutral</h4>
+              <div className="space-y-6">
+                {neutralComments.map((comment, idx) => renderComment(comment, idx))}
+              </div>
+            </div>
+          )}
+
+          {activeStances.includes('against') && (
+            <div className={`border-2 ${stanceColors.against.border} rounded-lg p-6 ${stanceColors.against.bg}`}>
+              <h4 className={`text-lg font-semibold mb-4 ${stanceColors.against.text}`}>Against</h4>
+              <div className="space-y-6">
+                {againstComments.map((comment, idx) => renderComment(comment, idx))}
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        // Standard 3-column grid for all 3 stances
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className={`border-2 ${stanceColors.pro.border} rounded-lg p-6 ${stanceColors.pro.bg}`}>
             <h4 className={`text-lg font-semibold mb-4 ${stanceColors.pro.text}`}>Pro</h4>
             {proComments.length > 0 ? (
               <div className="space-y-6">
-                {proComments.map((comment, idx) => {
-                  const isCurrentlyStreaming = streamingStatus[comment.llmId]?.isStreaming;
-                  return (
-                    <div key={idx} className="p-4 bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow">
-                      <div className="flex items-center mb-3">
-                        <div className="mr-3">
-                          {getLLMAvatar(comment.llmId)}
-                        </div>
-                        <div>
-                          <span className="font-semibold text-gray-800">
-                            {comment.playerName || `Player ${comment.playerNumber || '?'}`}
-                            {isCurrentlyStreaming && (
-                              <span className="ml-2 text-xs text-gray-500 animate-pulse">
-                                typing...
-                              </span>
-                            )}
-                          </span>
-                          <div className="text-xs text-gray-500">({comment.llmName})</div>
-                        </div>
-                      </div>
-                      <div className="prose prose-sm max-w-none text-gray-700">
-                        <ReactMarkdown>{comment.comment || "..."}</ReactMarkdown>
-                      </div>
-                    </div>
-                  );
-                })}
+                {proComments.map((comment, idx) => renderComment(comment, idx))}
               </div>
             ) : (
               <p className="text-gray-500">No pro comments in this round.</p>
@@ -1431,33 +1478,7 @@ const handleGameClick = (gameId) => {
             <h4 className={`text-lg font-semibold mb-4 ${stanceColors.neutral.text}`}>Neutral</h4>
             {neutralComments.length > 0 ? (
               <div className="space-y-6">
-                {neutralComments.map((comment, idx) => {
-                  const isCurrentlyStreaming = streamingStatus[comment.llmId]?.isStreaming;
-                  return (
-                    <div key={idx} className="p-4 bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow">
-                      <div className="flex items-center mb-3">
-                        <div className="mr-3">
-                          {getLLMAvatar(comment.llmId)}
-                        </div>
-                        <div>
-                          <span className="font-semibold text-gray-800">
-                            {comment.playerName || `Player ${comment.playerNumber || '?'}`}
-                            {isCurrentlyStreaming && (
-                              <span className="ml-2 text-xs text-gray-500 animate-pulse">
-                                typing...
-                              </span>
-                            )}
-                          </span>
-                          <div className="text-xs text-gray-500">({comment.llmName})</div>
-                        </div>
-                      </div>
-
-                      <div className="prose prose-sm max-w-none text-gray-700">
-                        <ReactMarkdown>{comment.comment || "..."}</ReactMarkdown>
-                      </div>
-                    </div>
-                  );
-                })}
+                {neutralComments.map((comment, idx) => renderComment(comment, idx))}
               </div>
             ) : (
               <p className="text-gray-500">No neutral comments in this round.</p>
@@ -1468,42 +1489,45 @@ const handleGameClick = (gameId) => {
             <h4 className={`text-lg font-semibold mb-4 ${stanceColors.against.text}`}>Against</h4>
             {againstComments.length > 0 ? (
               <div className="space-y-6">
-                {againstComments.map((comment, idx) => {
-                  const isCurrentlyStreaming = streamingStatus[comment.llmId]?.isStreaming;
-                  return (
-                    <div key={idx} className="p-4 bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow">
-                      <div className="flex items-center mb-3">
-                        <div className="mr-3">
-                          {getLLMAvatar(comment.llmId)}
-                        </div>
-                        <div>
-                          <span className="font-semibold text-gray-800">
-                            {comment.playerName || `Player ${comment.playerNumber || '?'}`}
-                            {isCurrentlyStreaming && (
-                              <span className="ml-2 text-xs text-gray-500 animate-pulse">
-                                typing...
-                              </span>
-                            )}
-                          </span>
-                          <div className="text-xs text-gray-500">({comment.llmName})</div>
-                        </div>
-                      </div>
-
-                      <div className="prose prose-sm max-w-none text-gray-700">
-                        <ReactMarkdown>{comment.comment || "..."}</ReactMarkdown>
-                      </div>
-                    </div>
-                  );
-                })}
+                {againstComments.map((comment, idx) => renderComment(comment, idx))}
               </div>
             ) : (
               <p className="text-gray-500">No against comments in this round.</p>
             )}
           </div>
         </div>
+      )}
+    </div>
+  );
+};
+
+// Helper function to render a comment (to avoid code duplication)
+const renderComment = (comment, idx) => {
+  const isCurrentlyStreaming = streamingStatus[comment.llmId]?.isStreaming;
+  return (
+    <div key={idx} className="p-4 bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow">
+      <div className="flex items-center mb-3">
+        <div className="mr-3">
+          {getLLMAvatar(comment.llmId)}
+        </div>
+        <div>
+          <span className="font-semibold text-gray-800">
+            {comment.playerName || `Player ${comment.playerNumber || '?'}`}
+            {isCurrentlyStreaming && (
+              <span className="ml-2 text-xs text-gray-500 animate-pulse">
+                typing...
+              </span>
+            )}
+          </span>
+          <div className="text-xs text-gray-500">({comment.llmName})</div>
+        </div>
       </div>
-    );
-  };
+      <div className="prose prose-sm max-w-none text-gray-700">
+        <ReactMarkdown>{comment.comment || "..."}</ReactMarkdown>
+      </div>
+    </div>
+  );
+};
 
   // Render voting phase
   // Modify the renderVoting function to preserve voting reasons:
@@ -1859,47 +1883,61 @@ const renderEliminationResults = (round) => {
   return (
     <div className="min-h-screen bg-gray-100">
       {/* Header */}
-      <header className="bg-blue-700 text-white py-6 shadow-lg">
-        <div className="max-w-7xl mx-auto px-6 flex justify-between items-center">
-          <div className="flex items-center space-x-3">
-            <div className="bg-white p-2 rounded-lg shadow-sm">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 text-blue-700">
-                <path d="M10.464 8.746c.227-.18.497-.311.786-.394v2.795a2.252 2.252 0 01-.786-.393c-.394-.313-.546-.681-.546-1.004 0-.323.152-.691.546-1.004zM12.75 15.662v-2.824c.347.085.664.228.921.421.427.32.579.686.579.991 0 .305-.152.671-.579.991a2.534 2.534 0 01-.921.42z" />
-                <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zM12.75 6a.75.75 0 00-1.5 0v.816a3.836 3.836 0 00-1.72.756c-.712.566-1.112 1.35-1.112 2.178 0 .829.4 1.612 1.113 2.178.502.4 1.102.647 1.719.756v2.978a2.536 2.536 0 01-.921-.421l-.879-.66a.75.75 0 00-.9 1.2l.879.66c.533.4 1.169.645 1.821.75V18a.75.75 0 001.5 0v-.81a4.124 4.124 0 001.821-.749c.745-.559 1.179-1.344 1.179-2.191 0-.847-.434-1.632-1.179-2.191a4.122 4.122 0 00-1.821-.75V8.354c.29.082.559.213.786.393l.415.33a.75.75 0 00.933-1.175l-.415-.33a3.836 3.836 0 00-1.719-.755V6z" clipRule="evenodd" />
-              </svg>
-            </div>
-            <h1 className="text-2xl font-bold tracking-tight">LLM Sharktank</h1>
-          </div>
-
+{/* Header */}
+<header className="text-gray-800 py-6">
+  <div className="max-w-7xl mx-auto px-6 flex justify-between items-center">
+    <div className="flex items-center space-x-3">
+      <Link to="/" className="flex items-center space-x-3 hover:opacity-80 transition-opacity">
+        <div className="p-2 rounded-lg">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 text-blue-700">
+            <path d="M10.464 8.746c.227-.18.497-.311.786-.394v2.795a2.252 2.252 0 01-.786-.393c-.394-.313-.546-.681-.546-1.004 0-.323.152-.691.546-1.004zM12.75 15.662v-2.824c.347.085.664.228.921.421.427.32.579.686.579.991 0 .305-.152.671-.579.991a2.534 2.534 0 01-.921.42z" />
+            <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zM12.75 6a.75.75 0 00-1.5 0v.816a3.836 3.836 0 00-1.72.756c-.712.566-1.112 1.35-1.112 2.178 0 .829.4 1.612 1.113 2.178.502.4 1.102.647 1.719.756v2.978a2.536 2.536 0 00-.921-.421l-.879-.66a.75.75 0 00-.9 1.2l.879.66c.533.4 1.169.645 1.821.75V18a.75.75 0 001.5 0v-.81a4.124 4.124 0 001.821-.749c.745-.559 1.179-1.344 1.179-2.191 0-.847-.434-1.632-1.179-2.191a4.122 4.122 0 00-1.821-.75V8.354c.29.082.559.213.786.393l.415.33a.75.75 0 00.933-1.175l-.415-.33a3.836 3.836 0 00-1.719-.755V6z" clipRule="evenodd" />
+          </svg>
         </div>
-      </header>
+        <h1 className="text-2xl font-bold tracking-tight">LLM Sharktank</h1>
+      </Link>
+    </div>
+    {initialShowLeaderboard && (
+      <Link to="/setup" className="py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-md hover:shadow-lg">
+        Start New Game
+      </Link>
+    )}
+  </div>
+</header>
 
       {/* Content */}
-      <div className="container mx-auto px-4 py-8">
-        {setupComplete ? (
-          <>
-            {renderGameHeader()}
-
-            {/* Show game results at the top when game is over */}
-            {gameOver && renderGameResults()}
-
-            {/* Always show all rounds from beginning, even when game is over */}
-            {Array.from({ length: currentRound }, (_, i) => i + 1).map(round => (
-  <div key={round}>
-    {renderRoundDiscussions(round)}
-    {currentRound === round && currentStep === 'voting' && renderVoting()}
-    {(round < currentRound || currentStep === 'elimination' || gameOver) &&
-      renderEliminationResults(round)
-    }
-  </div>
-))}
-
-            {showLeaderboard && renderLeaderboard()}
-          </>
-        ) : (
-          renderSetup()
-        )}
+     {/* Content */}
+<div className="container mx-auto px-4 py-8">
+  {initialShowLeaderboard ? (
+    <>
+      <div className="max-w-6xl mx-auto">
+        {renderLeaderboard()}
       </div>
+    </>
+  ) : setupComplete ? (
+    <>
+      {renderGameHeader()}
+
+      {/* Show game results at the top when game is over */}
+      {gameOver && renderGameResults()}
+
+      {/* Always show all rounds from beginning, even when game is over */}
+      {Array.from({ length: currentRound }, (_, i) => i + 1).map(round => (
+        <div key={round}>
+          {renderRoundDiscussions(round)}
+          {currentRound === round && currentStep === 'voting' && renderVoting()}
+          {(round < currentRound || currentStep === 'elimination' || gameOver) &&
+            renderEliminationResults(round)
+          }
+        </div>
+      ))}
+
+      {showLeaderboard && renderLeaderboard()}
+    </>
+  ) : (
+    renderSetup()
+  )}
+</div>
 
       {/* Loading overlay - only shown when absolutely necessary */}
       {isLoading && renderLoading()}
