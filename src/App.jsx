@@ -1569,104 +1569,140 @@ const handleGameClick = (gameId) => {
     );
   };
 
+// Render elimination results
+const renderEliminationResults = (round) => {
+  const eliminationData = eliminations.find(e => e.round === round);
 
-  // Render elimination results
-  const renderEliminationResults = (round) => {
-    const eliminationData = eliminations.find(e => e.round === round);
+  if (!eliminationData) return null;
 
-    if (!eliminationData) return null;
+  return (
+    <div className="bg-white rounded-lg shadow-xl p-6 mb-8 border border-gray-200">
+      <div className="flex justify-between items-center mb-6">
+        <h3 className="text-xl font-bold text-gray-800">Round {round} Elimination Results</h3>
 
-    return (
-      <div className="bg-white rounded-lg shadow-xl p-6 mb-8 border border-gray-200">
-        <div className="flex justify-between items-center mb-6">
-          <h3 className="text-xl font-bold text-gray-800">Round {round} Elimination Results</h3>
+        {currentStep === 'elimination' && currentRound === round && (
+          <button
+            onClick={proceedToNextRound}
+            className="py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-md hover:shadow-lg"
+          >
+            {round < numRounds ? "Next Round" : "Finalize Game"}
+          </button>
+        )}
+      </div>
 
-          {currentStep === 'elimination' && currentRound === round && (
-            <button
-              onClick={proceedToNextRound}
-              className="py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-md hover:shadow-lg"
-            >
-              {round < numRounds ? "Next Round" : "Finalize Game"}
-            </button>
-          )}
-        </div>
-
-        <div className="bg-rose-50 border-2 border-rose-200 rounded-lg p-6 mb-6">
-          <h4 className="text-lg font-semibold text-rose-700 mb-4">Eliminated:</h4>
-          {eliminationData.eliminated.length > 0 ? (
-            <div className="flex flex-wrap gap-4">
-              {eliminationData.eliminated.map(id => {
-                const llm = activeLLMs.find(l => l.instanceId === id);
-                return (
-                  <div key={id} className="flex items-center bg-white p-4 rounded-lg shadow-sm">
-                    <div className="mr-3">
-                      {getLLMAvatar(id)}
-                    </div>
-                    <div>
-                      <div className="font-semibold">{playerMap[id] || `Player ${llm?.playerNumber || '?'}`}</div>
-                      <div className="text-sm text-gray-500 flex items-center">
-                        <span className="mr-1">({llm?.name})</span>
-                        <span className="font-medium">Votes: {eliminationData.votes[id]?.length || 0}</span>
-                      </div>
+      <div className="bg-rose-50 border-2 border-rose-200 rounded-lg p-6 mb-6">
+        <h4 className="text-lg font-semibold text-rose-700 mb-4">Eliminated:</h4>
+        {eliminationData.eliminated.length > 0 ? (
+          <div className="flex flex-wrap gap-4">
+            {eliminationData.eliminated.map(id => {
+              const llm = activeLLMs.find(l => l.instanceId === id);
+              return (
+                <div key={id} className="flex items-center bg-white p-4 rounded-lg shadow-sm">
+                  <div className="mr-3">
+                    {getLLMAvatar(id)}
+                  </div>
+                  <div>
+                    <div className="font-semibold">{playerMap[id] || `Player ${llm?.playerNumber || '?'}`}</div>
+                    <div className="text-sm text-gray-500 flex items-center">
+                      <span className="mr-1">({llm?.name})</span>
+                      <span className="font-medium">Votes: {eliminationData.votes[id]?.length || 0}</span>
                     </div>
                   </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-gray-500">No eliminations in this round.</p>
+        )}
+      </div>
+
+      <div>
+        <h4 className="text-lg font-semibold mb-4 text-gray-800">Voting Breakdown:</h4>
+        <div className="overflow-hidden border border-gray-200 rounded-lg shadow-sm">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Voted For</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Voters</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Votes</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {Object.entries(eliminationData.votes).map(([votedFor, voters], index) => {
+                return (
+                  <tr key={votedFor} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      {playerMap[votedFor] || votedFor}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-500">
+                      <div className="flex flex-wrap gap-2">
+                        {voters.map(voter => (
+                          <span key={voter} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                            {playerMap[voter] || voter}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {voters.length}
+                    </td>
+                  </tr>
                 );
               })}
-            </div>
-          ) : (
-            <p className="text-gray-500">No eliminations in this round.</p>
-          )}
+            </tbody>
+          </table>
         </div>
-
-        <div>
-          <h4 className="text-lg font-semibold mb-4 text-gray-800">Voting Breakdown:</h4>
-          <div className="overflow-hidden border border-gray-200 rounded-lg shadow-sm">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Voted For</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Voters</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Votes</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {Object.entries(eliminationData.votes).map(([votedFor, voters], index) => {
-                  return (
-                    <tr key={votedFor} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        {playerMap[votedFor] || votedFor}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-500">
-                        <div className="flex flex-wrap gap-2">
-                          {voters.map(voter => (
-                            <span key={voter} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                              {playerMap[voter] || voter}
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {voters.length}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          {eliminationData.endDiscussionVotes > 0 && (
-            <div className="mt-4">
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <h4 className="text-sm font-medium text-blue-800">
-                  Votes to end discussion: {eliminationData.endDiscussionVotes} / {Object.keys(eliminationData.reasons).length} players
-                </h4>
-              </div>
+        {eliminationData.endDiscussionVotes > 0 && (
+          <div className="mt-4">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h4 className="text-sm font-medium text-blue-800">
+                Votes to end discussion: {eliminationData.endDiscussionVotes} / {Object.keys(eliminationData.reasons).length} players
+              </h4>
             </div>
-          )}
+          </div>
+        )}
+      </div>
+
+      {/* Add voting reasons section */}
+      <div className="mt-6">
+        <h4 className="text-lg font-semibold mb-4 text-gray-800">Voting Reasons:</h4>
+        <div className="space-y-4">
+          {eliminationData.reasons && Object.entries(eliminationData.reasons).map(([voterId, voteData]) => {
+            // Get the voter info
+            const voter = activeLLMs.find(llm => llm.instanceId === voterId) || 
+                          { name: "Unknown", instanceId: voterId };
+            
+            // Get who they voted for
+            const votedForId = voteData.votedFor;
+            const votedForName = votedForId ? (playerMap[votedForId] || votedForId) : "No vote";
+            
+            return (
+              <div key={voterId} className="p-4 border border-gray-200 rounded-lg">
+                <div className="flex items-center mb-2">
+                  <div className="mr-3">
+                    {getLLMAvatar(voterId)}
+                  </div>
+                  <div>
+                    <div className="font-semibold text-gray-800">
+                      {playerMap[voterId] || `Unknown Player`}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      ({voter.name}) Voted for: <span className="font-medium">{votedForName}</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="prose prose-sm max-w-none mt-2 bg-gray-50 p-3 rounded">
+                  <ReactMarkdown>{voteData.content || "No reason provided"}</ReactMarkdown>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
-    );
-  };
+    </div>
+  );
+};
 
   // Render game results
   const renderGameResults = () => {
@@ -1676,34 +1712,28 @@ const handleGameClick = (gameId) => {
       <div className="bg-white rounded-lg shadow-xl p-8 mb-8 border border-gray-200">
         <h2 className="text-2xl font-bold mb-6 text-center text-gray-800">Game Results</h2>
 
-        <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-8 mb-8 text-center">
-          <h3 className="text-xl font-semibold text-blue-700 mb-6">
-            {Array.isArray(winner) && winner.length > 1 ? 'Winners:' : 'Winner:'}
-          </h3>
-
-          <div className="flex flex-wrap justify-center gap-6">
-            {Array.isArray(winner) ? (
-              winner.map(w => (
-                <div key={w.instanceId} className="flex flex-col items-center p-6 bg-white rounded-lg shadow-md">
-                  <div className="mb-3">
-                    {getLLMAvatar(w.instanceId, 64)} {/* Using larger size for winners */}
-                  </div>
-
-                  <span className="font-semibold text-lg text-gray-800 mb-1">{playerMap[w.instanceId]}</span>
-                  <span className="text-sm text-gray-500 capitalize">({w.name} - {w.stance})</span>
-                </div>
-              ))
-            ) : (
-              <div className="flex flex-col items-center p-6 bg-white rounded-lg shadow-md">
-                <div className="mb-3">
-                  {getLLMAvatar(winner.instanceId, 80)} {/* Using even larger size for single winner */}
-                </div>
-                <span className="font-semibold text-xl text-gray-800 mb-1">{playerMap[winner.instanceId]}</span>
-                <span className="text-sm text-gray-500 capitalize">({winner.name} - {winner.stance})</span>
-              </div>
-            )}
-          </div>
+        <div className="flex flex-wrap justify-center gap-6">
+  {Array.isArray(winner) ? (
+    winner.map(w => (
+      <div key={w.instanceId || w.id} className="flex flex-col items-center p-6 bg-white rounded-lg shadow-md">
+        <div className="mb-3">
+          {getLLMAvatar(w.instanceId || w.id, 64)} {/* Using larger size for winners */}
         </div>
+
+        <span className="font-semibold text-lg text-gray-800 mb-1">{playerMap[w.instanceId || w.id]}</span>
+        <span className="text-sm text-gray-500 capitalize">({w.name} - {w.stance})</span>
+      </div>
+    ))
+  ) : (
+    <div className="flex flex-col items-center p-6 bg-white rounded-lg shadow-md">
+      <div className="mb-3">
+        {getLLMAvatar(winner?.instanceId || winner?.id, 80)} {/* Using even larger size for single winner */}
+      </div>
+      <span className="font-semibold text-xl text-gray-800 mb-1">{playerMap[winner?.instanceId || winner?.id]}</span>
+      <span className="text-sm text-gray-500 capitalize">({winner?.name} - {winner?.stance})</span>
+    </div>
+  )}
+</div>
 
         <div className="flex justify-center space-x-4 mb-8">
           <button
