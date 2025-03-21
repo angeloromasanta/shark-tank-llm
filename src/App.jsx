@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, addDoc, getDocs, query, orderBy, limit, doc, getDoc, setDoc } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, getDocs, query, orderBy, limit, doc, getDoc, setDoc, where, updateDoc } from 'firebase/firestore';
+import { useNavigate, useParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 // Firebase configuration
 const firebaseConfig = {
@@ -114,7 +115,7 @@ function App() {
   const [setupComplete, setSetupComplete] = useState(false);
   const [productName, setProductName] = useState('');
   const [productDescription, setProductDescription] = useState('');
-  const [numRounds, setNumRounds] = useState(100);
+  const [numRounds, setNumRounds] = useState(3);
   const [selectedLLMs, setSelectedLLMs] = useState(
     availableLLMs.map(llm => ({
       ...llm,
@@ -154,6 +155,91 @@ function App() {
   // Player map (maps real LLM IDs to player names)
   const [playerMap, setPlayerMap] = useState({});
   const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const navigate = useNavigate();
+  const { gameId: urlGameId } = useParams();
+
+  // Add this to your existing useEffect or create a new one
+  useEffect(() => {
+    const loadGame = async () => {
+      if (urlGameId) {
+        setIsLoading(true);
+        setLoadingText('Loading game...');
+
+        try {
+          // Query Firestore for the game with this ID
+          const gamesRef = collection(db, "llm-sharktank-games");
+          const q = query(gamesRef, where("id", "==", urlGameId));
+          const querySnapshot = await getDocs(q);
+
+          if (!querySnapshot.empty) {
+            const gameData = querySnapshot.docs[0].data();
+
+            // Set all the game state from the loaded data
+            setProductName(gameData.productName);
+            setProductDescription(gameData.productDescription);
+            setNumRounds(gameData.numRounds);
+            setPlayerMap(gameData.participants.reduce((map, p) => {
+              map[p.id] = p.playerName;
+              return map;
+            }, {}));
+
+            // Load all participants
+            setActiveLLMs(gameData.participants.map(p => {
+              const baseLLM = availableLLMs.find(llm => llm.id === p.id.split('-')[0]);
+              return {
+                ...baseLLM,
+                instanceId: p.id,
+                stance: p.stance,
+                eliminated: false,
+                comments: []
+              };
+            }));
+
+            // Load rounds data if available
+            if (gameData.rounds && gameData.rounds.length > 0) {
+              setDiscussions(gameData.rounds.map(r => ({
+                round: r.roundNumber,
+                comments: r.discussions || []
+              })));
+
+              setEliminations(gameData.rounds.map(r => ({
+                round: r.roundNumber,
+                eliminated: r.eliminations?.eliminated || [],
+                votes: r.eliminations?.votes || {},
+                reasons: r.eliminations?.reasons || {},
+                endDiscussionVotes: r.eliminations?.endDiscussionVotes || 0
+              })));
+
+              // Set the current round to the latest completed round
+              setCurrentRound(gameData.rounds.length);
+            }
+
+            setGameId(urlGameId);
+            setSetupComplete(true);
+            setCurrentStep(gameData.status === 'completed' ? 'post' : 'discussion');
+
+            if (gameData.status === 'completed') {
+              setGameOver(true);
+              setWinner(gameData.winners || []);
+            }
+          } else {
+            // Game not found
+            navigate('/');
+          }
+        } catch (error) {
+          console.error("Error loading game:", error);
+          navigate('/');
+        }
+
+        setIsLoading(false);
+      }
+    };
+
+    loadGame();
+  }, [urlGameId, navigate]);
+
+
+
 
   // Load leaderboard on component mount
   useEffect(() => {
@@ -186,8 +272,6 @@ function App() {
     return instanceId.split('-')[0];
   };
 
-  // Function to render LLM avatar
-  // Replace the existing getLLMAvatar function with this fixed version
   const getLLMAvatar = (llmId, size = 36) => {
     // Extract the base model ID (e.g., "claude" from "claude-pro-1")
     const baseModelId = llmId.split('-')[0];
@@ -359,129 +443,124 @@ function App() {
     return map;
   };
   // Complete setup and start the game
-  const completeSetup = async () => {
-    if (!productName.trim() || !productDescription.trim()) {
-      alert('Please enter a product name and description');
-      return;
-    }
+// Update the completeSetup function to ensure navigation works
+const completeSetup = async () => {
+  if (!productName.trim() || !productDescription.trim()) {
+    alert('Please enter a product name and description');
+    return;
+  }
 
-    // Check that at least one model has a count > 0
-    const totalModels = selectedLLMs.reduce(
-      (sum, llm) => sum + llm.proCount + llm.neutralCount + llm.againstCount,
-      0
-    );
+  // Check that at least one model has a count > 0
+  const totalModels = selectedLLMs.reduce(
+    (sum, llm) => sum + llm.proCount + llm.neutralCount + llm.againstCount,
+    0
+  );
 
-    if (totalModels < 2) {
-      alert('Please include at least 2 LLM instances');
-      return;
-    }
+  if (totalModels < 2) {
+    alert('Please include at least 2 LLM instances');
+    return;
+  }
 
-    setIsLoading(true);
-    setLoadingText('Setting up game...');
+  setIsLoading(true);
+  setLoadingText('Setting up game...');
 
-    // Initialize active LLMs with assigned stances
-    // Replace the active LLMs initialization in the completeSetup function with this version
-    // Notice that we use a single global counter across all stances and models
+  // Initialize active LLMs with assigned stances
+  const initializedLLMs = [];
+  let globalPlayerCounter = 1; // Single counter for all instances
 
-    // Initialize active LLMs with assigned stances
-    const initializedLLMs = [];
-    let globalPlayerCounter = 1; // Single counter for all instances
+  for (const llm of selectedLLMs) {
+    // Only include models with at least one instance
+    if (llm.proCount > 0 || llm.neutralCount > 0 || llm.againstCount > 0) {
+      // Add pro instances
+      for (let i = 0; i < llm.proCount; i++) {
+        initializedLLMs.push({
+          ...llm,
+          instanceId: `${llm.id}-pro-${i}`, // Keep original counter for internal tracking
+          playerNumber: globalPlayerCounter, // Add explicit player number
+          stance: 'pro',
+          eliminated: false,
+          comments: []
+        });
+        globalPlayerCounter++; // Increment global counter
+      }
 
-    for (const llm of selectedLLMs) {
-      // Only include models with at least one instance
-      if (llm.proCount > 0 || llm.neutralCount > 0 || llm.againstCount > 0) {
-        // Add pro instances
-        for (let i = 0; i < llm.proCount; i++) {
-          initializedLLMs.push({
-            ...llm,
-            instanceId: `${llm.id}-pro-${i}`, // Keep original counter for internal tracking
-            playerNumber: globalPlayerCounter, // Add explicit player number
-            stance: 'pro',
-            eliminated: false,
-            comments: []
-          });
-          globalPlayerCounter++; // Increment global counter
-        }
+      // Add neutral instances
+      for (let i = 0; i < llm.neutralCount; i++) {
+        initializedLLMs.push({
+          ...llm,
+          instanceId: `${llm.id}-neutral-${i}`, // Keep original counter for internal tracking
+          playerNumber: globalPlayerCounter, // Add explicit player number
+          stance: 'neutral',
+          eliminated: false,
+          comments: []
+        });
+        globalPlayerCounter++; // Increment global counter
+      }
 
-        // Add neutral instances
-        for (let i = 0; i < llm.neutralCount; i++) {
-          initializedLLMs.push({
-            ...llm,
-            instanceId: `${llm.id}-neutral-${i}`, // Keep original counter for internal tracking
-            playerNumber: globalPlayerCounter, // Add explicit player number
-            stance: 'neutral',
-            eliminated: false,
-            comments: []
-          });
-          globalPlayerCounter++; // Increment global counter
-        }
-
-        // Add against instances
-        for (let i = 0; i < llm.againstCount; i++) {
-          initializedLLMs.push({
-            ...llm,
-            instanceId: `${llm.id}-against-${i}`, // Keep original counter for internal tracking
-            playerNumber: globalPlayerCounter, // Add explicit player number
-            stance: 'against',
-            eliminated: false,
-            comments: []
-          });
-          globalPlayerCounter++; // Increment global counter
-        }
+      // Add against instances
+      for (let i = 0; i < llm.againstCount; i++) {
+        initializedLLMs.push({
+          ...llm,
+          instanceId: `${llm.id}-against-${i}`, // Keep original counter for internal tracking
+          playerNumber: globalPlayerCounter, // Add explicit player number
+          stance: 'against',
+          eliminated: false,
+          comments: []
+        });
+        globalPlayerCounter++; // Increment global counter
       }
     }
+  }
 
-    // Now update the player map generation to use the explicit player number
-    const newPlayerMap = {};
-    initializedLLMs.forEach(llm => {
-      newPlayerMap[llm.instanceId] = `Player ${llm.playerNumber}`;
+  // Now update the player map generation to use the explicit player number
+  const newPlayerMap = {};
+  initializedLLMs.forEach(llm => {
+    newPlayerMap[llm.instanceId] = `Player ${llm.playerNumber}`;
+  });
+  setPlayerMap(newPlayerMap);
+  setActiveLLMs(initializedLLMs);
+
+  // Setup rounds
+  const rounds = [];
+  for (let i = 1; i <= numRounds; i++) {
+    rounds.push({
+      roundNumber: i,
+      discussions: [],
+      eliminations: []
     });
-    setPlayerMap(newPlayerMap);
-    setActiveLLMs(initializedLLMs);
+  }
 
-    // Setup rounds
-    const rounds = [];
-    for (let i = 1; i <= numRounds; i++) {
-      rounds.push({
-        roundNumber: i,
-        discussions: [],
-        eliminations: []
-      });
-    }
+  setRoundSetup(rounds);
+  setCurrentRound(1);
 
-    setRoundSetup(rounds);
-    setCurrentRound(1);
+  // Generate game ID
+  const timestamp = new Date().getTime();
+  const newGameId = `game-${timestamp}`;
+  setGameId(newGameId);
 
-    // Generate game ID
-    const timestamp = new Date().getTime();
-    const newGameId = `game-${timestamp}`;
-    setGameId(newGameId);
+  // Save the initial game setup to Firebase
+  try {
+    const docRef = await addDoc(collection(db, "llm-sharktank-games"), {
+      id: newGameId,
+      productName,
+      productDescription,
+      numRounds,
+      participants: initializedLLMs.map(llm => ({
+        id: llm.instanceId,
+        name: llm.name,
+        stance: llm.stance,
+        playerNumber: llm.playerNumber,
+        playerName: newPlayerMap[llm.instanceId]
+      })),
+      timestamp: new Date(),
+      status: 'in-progress',
+      rounds: []
+    });
 
-    // Save the initial game setup to Firebase
-    try {
-      await addDoc(collection(db, "llm-sharktank-games"), {
-        id: newGameId,
-        productName,
-        productDescription,
-        numRounds,
-        participants: initializedLLMs.map(llm => ({
-          id: llm.instanceId,
-          name: llm.name,
-          stance: llm.stance,
-          playerName: newPlayerMap[llm.instanceId]
-        })),
-        timestamp: new Date(),
-        status: 'in-progress',
-        rounds: []
-      });
-    } catch (error) {
-      console.error("Error saving game setup:", error);
-    }
-
-    setIsLoading(false);
+    // Update state before navigation
     setSetupComplete(true);
     setCurrentStep('discussion');
-
+    
     // Initialize streaming status for all LLMs
     const initialStreamingStatus = {};
     initializedLLMs.forEach(llm => {
@@ -491,10 +570,93 @@ function App() {
       };
     });
     setStreamingStatus(initialStreamingStatus);
-
-    // Start first round discussions
+    
+    // Start first round discussions before navigating
     startRound(1, initializedLLMs);
+    
+    // Make sure to wait a moment before navigation to ensure state has updated
+    setTimeout(() => {
+      // Navigate to the unique game URL
+      if (navigate) {
+        navigate(`/game/${newGameId}`);
+      }
+    }, 100);
+    
+  } catch (error) {
+    console.error("Error saving game setup:", error);
+    setIsLoading(false);
+    alert("Error creating game. Please try again.");
+  } finally {
+    setIsLoading(false);
+  }
+};
+
+  const updateGameInFirebase = async () => {
+    if (!gameId) return;
+
+    setIsLoading(true);
+    setLoadingText('Saving game state...');
+
+    try {
+      // Find the document with this game ID
+      const gamesRef = collection(db, "llm-sharktank-games");
+      const q = query(gamesRef, where("id", "==", gameId));
+      const querySnapshot = await getDocs(q);
+
+      if (!querySnapshot.empty) {
+        const docRef = querySnapshot.docs[0].ref;
+
+        // Prepare the rounds data with discussions and eliminations
+        const roundsData = discussions.map(discussion => {
+          const roundNumber = discussion.round;
+          const elimination = eliminations.find(e => e.round === roundNumber);
+
+          return {
+            roundNumber,
+            discussions: discussion.comments,
+            eliminations: elimination || null
+          };
+        });
+
+        // Prepare winners data if game is over
+        let winnersData = [];
+        if (gameOver) {
+          if (Array.isArray(winner)) {
+            winnersData = winner.map(w => ({
+              id: w.instanceId,
+              name: w.name,
+              stance: w.stance,
+              playerName: playerMap[w.instanceId]
+            }));
+          } else if (winner) {
+            winnersData = [{
+              id: winner.instanceId,
+              name: winner.name,
+              stance: winner.stance,
+              playerName: playerMap[winner.instanceId]
+            }];
+          }
+        }
+
+        // Update the document
+        await updateDoc(docRef, {
+          status: gameOver ? 'completed' : 'in-progress',
+          rounds: roundsData,
+          winners: winnersData,
+          lastUpdated: new Date()
+        });
+
+        console.log("Game state saved successfully!");
+      } else {
+        console.error("Game document not found");
+      }
+    } catch (error) {
+      console.error("Error updating game:", error);
+    } finally {
+      setIsLoading(false);
+    }
   };
+
 
   // Generate initial LLM comments for a round
   const startRound = async (roundNumber, currentLLMs) => {
@@ -624,6 +786,7 @@ function App() {
   const proceedToVoting = () => {
     setCurrentStep('voting');
     startVoting(currentRound, activeLLMs);
+    updateGameInFirebase();
   };
 
   // Start the voting process with streaming comments
@@ -699,54 +862,34 @@ function App() {
   const proceedToElimination = () => {
     setCurrentStep('elimination');
     finalizeVotes();
+    updateGameInFirebase(); // Add this line
   };
 
   // Finalize votes and determine who is eliminated
-
-  // Now let's modify the elimination process to preserve vote history
-  // Modify the finalizeVotes function
   const finalizeVotes = () => {
     // Count votes
     const voteCount = {};
     const votingResults = {};
-    let endDiscussionVotes = 0;
     const totalVoters = Object.keys(votingReasons).length;
-
+  
     // Process votes from votingReasons
     Object.entries(votingReasons).forEach(([voterId, voteData]) => {
       const votedFor = voteData.votedFor;
-
-      if (votedFor === "END_DISCUSSION") {
-        endDiscussionVotes++;
-        return;
-      }
-
+  
       if (votedFor) {
         if (!votingResults[votedFor]) {
           votingResults[votedFor] = [];
         }
         votingResults[votedFor].push(voterId);
-
+  
         voteCount[votedFor] = (voteCount[votedFor] || 0) + 1;
       }
     });
-
-    // If majority voted to end discussion, end the game
-    if (endDiscussionVotes > totalVoters / 2) {
-      setGameOver(true);
-      // All remaining players are winners
-      const remainingLLMs = activeLLMs.filter(llm => !llm.eliminated);
-      setWinner(remainingLLMs);
-
-      // Update leaderboard
-      updateLeaderboard(remainingLLMs);
-      return;
-    }
-
-    // Continue with normal elimination logic
+  
+    // Normal elimination logic
     let maxVotes = 0;
     let eliminatedLLMs = [];
-
+  
     for (const [votedId, count] of Object.entries(voteCount)) {
       if (count > maxVotes) {
         maxVotes = count;
@@ -755,7 +898,7 @@ function App() {
         eliminatedLLMs.push(votedId);
       }
     }
-
+  
     // Update eliminated status
     const updatedLLMs = activeLLMs.map(llm => {
       if (eliminatedLLMs.includes(llm.instanceId)) {
@@ -763,19 +906,18 @@ function App() {
       }
       return llm;
     });
-
+  
     // Store the full voting data including reasons
     setEliminations(prev => [...prev, {
       round: currentRound,
       eliminated: eliminatedLLMs,
       votes: votingResults,
-      reasons: { ...votingReasons },
-      endDiscussionVotes: endDiscussionVotes
+      reasons: { ...votingReasons }
     }]);
-
+  
     setVotes(votingResults);
     setActiveLLMs(updatedLLMs);
-
+  
     // If there's only one player left, end the game
     const remainingPlayers = updatedLLMs.filter(llm => !llm.eliminated);
     if (remainingPlayers.length <= 1) {
@@ -790,14 +932,15 @@ function App() {
     const nextRoundNumber = currentRound + 1;
     setCurrentRound(nextRoundNumber);
     setCurrentStep('discussion');
-
-    // Start next round
-    if (nextRoundNumber <= numRounds) {
-      startRound(nextRoundNumber, activeLLMs);
-    } else {
-      // Game over, determine winner(s)
-      finalizeGame();
+    
+    // If we're about to exceed our current numRounds, extend it
+    if (nextRoundNumber > numRounds) {
+      setNumRounds(nextRoundNumber);
     }
+    
+    // Start next round
+    startRound(nextRoundNumber, activeLLMs);
+    updateGameInFirebase();
   };
 
   // Finalize the game 
@@ -813,6 +956,9 @@ function App() {
 
     // Update leaderboard
     updateLeaderboard(remainingLLMs);
+
+    // Update game status in Firebase to completed
+    updateGameInFirebase();
   };
 
   // End game early and post to leaderboard
@@ -853,60 +999,61 @@ function App() {
     return prompt;
   };
 
-  // Update the generateVotingPrompt function
   const generateVotingPrompt = (llm, roundNumber, roundDiscussions) => {
     let prompt = `You are ${playerMap[llm.instanceId]}, participating in a product evaluation panel.\n\n`;
-
+  
     prompt += `Product: ${productName}\n\n`;
-
+  
     prompt += `Here are the comments from all participating players in round ${roundNumber}:\n\n`;
-
+  
     roundDiscussions.forEach(comment => {
       // Don't include your own comment in the list
       if (comment.llmId !== llm.instanceId) {
         prompt += `${comment.playerName}: "${comment.comment}"\n\n`;
       }
     });
-
-    // Add the new option to end the game
-    prompt += `\nYou now have two choices:
-1. Vote to eliminate a player if you feel their feedback isn't valuable. In this case, start your response with "I vote to eliminate Player X" and explain why in 1-2 sentences.
-2. Vote to end the discussion if you feel the current group has provided sufficient perspective on the product. In this case, start your response with "I vote to end the discussion" and explain why in 1-2 sentences.
-
-Please choose one option and provide your reasoning. Be brief but specific.`;
-
-    return prompt;
-  };// Modify the parseVote function
-  const parseVote = (voteResponse, validIds) => {
-    // Check if they voted to end the discussion
-    if (voteResponse.toLowerCase().includes("i vote to end the discussion")) {
-      return "END_DISCUSSION";
+  
+    // Check if we're down to the final two
+    const remainingPlayers = activeLLMs.filter(l => !l.eliminated);
+    if (remainingPlayers.length === 2 && llm.eliminated) {
+      // Final voting by eliminated players
+      prompt += `\nWe are down to the final two players: ${remainingPlayers.map(p => playerMap[p.instanceId]).join(' and ')}.`
+      prompt += `\nAs an eliminated player, you now vote for the winner. Start your response with "I vote for Player X" and explain why in 1-2 sentences.`;
+    } else {
+      // Normal elimination voting
+      prompt += `\nYou now need to vote to eliminate a player if you feel their feedback isn't valuable. Start your response with "I vote to eliminate Player X" and explain why in 1-2 sentences.`;
     }
+  
+    return prompt;
+  };
 
-    // Check for direct vote declaration
-    const voteMatch = voteResponse.match(/I vote to eliminate Player (\d+)/i);
+  
+  const parseVote = (voteResponse, validIds) => {
+    // Check for direct elimination vote
+    const voteMatch = voteResponse.match(/I vote to eliminate Player (\d+)/i) || 
+                      voteResponse.match(/I vote for Player (\d+)/i);
+                      
     if (voteMatch && voteMatch[1]) {
       const playerNumber = parseInt(voteMatch[1]);
       // Find the LLM ID that maps to this player number
       const votedId = Object.entries(playerMap)
         .find(([id, name]) => name === `Player ${playerNumber}`)?.[0];
-
+  
       if (votedId && validIds.includes(votedId)) {
         return votedId;
       }
     }
-
+  
     // Try to find any player mention
     for (const [id, playerName] of Object.entries(playerMap)) {
       if (validIds.includes(id) && voteResponse.includes(playerName)) {
         return id;
       }
     }
-
+  
     return null;
   };
-  // Update leaderboard with game results
-  // Replace the updateLeaderboard function with this fixed version:
+
   const updateLeaderboard = async (winners) => {
     try {
       // Get current leaderboard
@@ -1124,81 +1271,96 @@ Please choose one option and provide your reasoning. Be brief but specific.`;
   );
 
   // Render leaderboard
-  const renderLeaderboard = () => {
-    const sortedModels = Object.entries(leaderboard.models)
-      .sort(([, a], [, b]) => b.wins - a.wins)
-      .slice(0, 10);
+  // Modify the renderLeaderboard function to add clickable game entries
+const renderLeaderboard = () => {
+  const sortedModels = Object.entries(leaderboard.models)
+    .sort(([, a], [, b]) => b.wins - a.wins)
+    .slice(0, 10);
 
-    const recentGames = leaderboard.games
-      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-      .slice(0, 5);
+  const recentGames = leaderboard.games
+    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+    .slice(0, 5);
 
-    return (
-      <div className="bg-white rounded-lg shadow-xl p-8 border border-gray-200">
-        <h2 className="text-2xl font-bold mb-6 text-gray-800">Leaderboard</h2>
+  return (
+    <div className="bg-white rounded-lg shadow-xl p-8 border border-gray-200">
+      <h2 className="text-2xl font-bold mb-6 text-gray-800">Leaderboard</h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div>
-            <h3 className="text-lg font-semibold mb-4 text-gray-800">Top Models</h3>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div>
+          <h3 className="text-lg font-semibold mb-4 text-gray-800">Top Models</h3>
 
-            {sortedModels.length > 0 ? (
-              <div className="overflow-hidden border border-gray-200 rounded-lg shadow-sm">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rank</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Model</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Wins</th>
+          {sortedModels.length > 0 ? (
+            <div className="overflow-hidden border border-gray-200 rounded-lg shadow-sm">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rank</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Model</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Wins</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {sortedModels.map(([id, model], index) => (
+                    <tr key={id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{index + 1}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{model.name}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{model.wins}</td>
                     </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {sortedModels.map(([id, model], index) => (
-                      <tr key={id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{index + 1}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{model.name}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{model.wins}</td>
-                      </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-gray-500">No games played yet.</p>
+          )}
+        </div>
+
+        <div>
+          <h3 className="text-lg font-semibold mb-4 text-gray-800">Recent Games</h3>
+
+          {recentGames.length > 0 ? (
+            <div className="space-y-4">
+              {recentGames.map((game) => (
+                <div 
+                  key={game.id} 
+                  className="border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+                  onClick={() => handleGameClick(game.id)}
+                >
+                  <h4 className="font-medium text-gray-800">{game.productName}</h4>
+                  <div className="mt-2 text-sm text-gray-600">
+                    <span>Winners: </span>
+                    {game.winners.map((winner, idx) => (
+                      <span key={`${winner}-${idx}`}>
+                        {selectedLLMs.find(llm => llm.id === winner.split('-')[0])?.name || winner}
+                        {idx < game.winners.length - 1 ? ', ' : ''}
+                      </span>
                     ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <p className="text-gray-500">No games played yet.</p>
-            )}
-          </div>
-
-          <div>
-            <h3 className="text-lg font-semibold mb-4 text-gray-800">Recent Games</h3>
-
-            {recentGames.length > 0 ? (
-              <div className="space-y-4">
-                {recentGames.map((game) => (
-                  <div key={game.id} className="border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
-                    <h4 className="font-medium text-gray-800">{game.productName}</h4>
-                    <div className="mt-2 text-sm text-gray-600">
-                      <span>Winners: </span>
-                      {game.winners.map((winner, idx) => (
-                        <span key={winner}>
-                          {selectedLLMs.find(llm => llm.id === winner)?.name || winner}
-                          {idx < game.winners.length - 1 ? ', ' : ''}
-                        </span>
-                      ))}
-                    </div>
-                    <div className="mt-1 text-xs text-gray-400">
-                      {new Date(game.timestamp.seconds * 1000).toLocaleDateString()}
-                    </div>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-gray-500">No games played yet.</p>
-            )}
-          </div>
+                  <div className="mt-1 text-xs text-gray-400">
+                    {new Date(game.timestamp.seconds * 1000).toLocaleDateString()}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-gray-500">No games played yet.</p>
+          )}
         </div>
       </div>
-    );
-  };
+    </div>
+  );
+};
 
+// Add a new function to handle game clicks in the leaderboard
+const handleGameClick = (gameId) => {
+  if (gameId) {
+    // Close the leaderboard first
+    setShowLeaderboard(false);
+    
+    // Navigate to the game page
+    navigate(`/game/${gameId}`);
+  }
+};
   // Render a single round of discussions
   const renderRoundDiscussions = (round) => {
     const roundData = discussions.find(d => d.round === round);
@@ -1493,14 +1655,14 @@ Please choose one option and provide your reasoning. Be brief but specific.`;
             </table>
           </div>
           {eliminationData.endDiscussionVotes > 0 && (
-        <div className="mt-4">
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <h4 className="text-sm font-medium text-blue-800">
-              Votes to end discussion: {eliminationData.endDiscussionVotes} / {Object.keys(eliminationData.reasons).length} players
-            </h4>
-          </div>
-        </div>
-      )}
+            <div className="mt-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <h4 className="text-sm font-medium text-blue-800">
+                  Votes to end discussion: {eliminationData.endDiscussionVotes} / {Object.keys(eliminationData.reasons).length} players
+                </h4>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -1543,7 +1705,7 @@ Please choose one option and provide your reasoning. Be brief but specific.`;
           </div>
         </div>
 
-        <div className="flex justify-center space-x-4">
+        <div className="flex justify-center space-x-4 mb-8">
           <button
             onClick={resetGame}
             className="py-3 px-6 rounded-lg font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors shadow-md hover:shadow-lg"
@@ -1556,6 +1718,13 @@ Please choose one option and provide your reasoning. Be brief but specific.`;
             className="py-3 px-6 rounded-lg font-medium text-blue-600 border border-blue-600 hover:bg-blue-50 transition-colors"
           >
             View Leaderboard
+          </button>
+
+          <button
+            onClick={() => navigator.clipboard.writeText(window.location.href)}
+            className="py-3 px-6 rounded-lg font-medium text-green-600 border border-green-600 hover:bg-green-50 transition-colors"
+          >
+            Copy Game URL
           </button>
         </div>
       </div>
@@ -1681,22 +1850,19 @@ Please choose one option and provide your reasoning. Be brief but specific.`;
           <>
             {renderGameHeader()}
 
-            {gameOver ? (
-              renderGameResults()
-            ) : (
-              <>
-                {/* Show all rounds from beginning */}
-                {Array.from({ length: currentRound }, (_, i) => i + 1).map(round => (
-                  <div key={round}>
-                    {renderRoundDiscussions(round)}
-                    {currentRound === round && currentStep === 'voting' && renderVoting()}
-                    {(round < currentRound || currentStep === 'elimination') &&
-                      renderEliminationResults(round)
-                    }
-                  </div>
-                ))}
-              </>
-            )}
+            {/* Show game results at the top when game is over */}
+            {gameOver && renderGameResults()}
+
+            {/* Always show all rounds from beginning, even when game is over */}
+            {Array.from({ length: currentRound }, (_, i) => i + 1).map(round => (
+  <div key={round}>
+    {renderRoundDiscussions(round)}
+    {currentRound === round && currentStep === 'voting' && renderVoting()}
+    {(round < currentRound || currentStep === 'elimination' || gameOver) &&
+      renderEliminationResults(round)
+    }
+  </div>
+))}
 
             {showLeaderboard && renderLeaderboard()}
           </>
